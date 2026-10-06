@@ -346,7 +346,8 @@ function render(){
 }
 
 /* ---------- breakdown screen ---------- */
-let detail = null;   // null, "day", or a meal name
+let detail = null;   // null, "day", a meal name, or "nut-<key>"
+let backStack = [];  // screens to return to with ‹
 function sumOf(items){
   const t = { kcal:0, p:0, c:0, f:0, fi:0, su:0, sf:0, na:0 };
   items.forEach(e => NUT.forEach(k => t[k] += +e[k] || 0));
@@ -370,7 +371,7 @@ function renderDetail(){
   const M = S.settings.macros, key = { Protein:"p", Carbs:"c", Fat:"f" };
   const row = (cls, name, g, kcal, pct, mult) => `
     <div class="brow ${cls} ${isDay ? "tap" : ""}" ${isDay ? `data-detail="nut-${key[name]}" role="button" tabindex="0"` : ""}>
-      <div><b>${name}</b><span>${r1(g)} g × ${mult} kcal</span></div>
+      <div><b>${name}${isDay ? ` <span class="chev" aria-hidden="true">›</span>` : ""}</b><span>${r1(g)} g × ${mult} kcal</span></div>
       <div class="bnum"><b>${r0(kcal)} kcal</b><span>${r0(pct)}%${isDay ? ` · goal ${M[key[name]]}%` : ""}</span></div>
     </div>`;
   let html = `
@@ -389,10 +390,9 @@ function renderDetail(){
             : `<p class="empty">Nothing logged ${isDay ? "for this day" : "for " + esc(detail.toLowerCase())} yet.</p>`}
     ${s.sum ? `<p class="note">Protein and carbs have 4 kcal per gram, fat has 9. Labels round their numbers and count fiber differently, so this adds up to ${r0(s.sum)} kcal, close to but not always exactly the total above.</p>` : ""}
     <div class="macros four" style="margin-top:12px">
-      <div><b>${r0(t.fi)} g</b><span>Fiber</span></div>
-      <div><b>${r0(t.su)} g</b><span>Sugar</span></div>
-      <div><b>${r0(t.sf)} g</b><span>Sat fat</span></div>
-      <div><b>${r0(t.na)} mg</b><span>Sodium</span></div>
+      ${[["fi","Fiber","g"],["su","Sugar","g"],["sf","Sat fat","g"],["na","Sodium","mg"]].map(([k,n,u]) => isDay
+        ? `<div class="tap" data-detail="nut-${k}" role="button" tabindex="0" aria-label="See where your ${n.toLowerCase()} came from"><b>${r0(t[k])} ${u}</b><span>${n} ›</span></div>`
+        : `<div><b>${r0(t[k])} ${u}</b><span>${n}</span></div>`).join("")}
     </div>
   </div>`;
   if (isDay){
@@ -419,9 +419,9 @@ function renderDetail(){
   }
   html += `<p class="note" style="margin-top:16px"><span class="key sp"></span>Protein <span class="key sc"></span>Carbs <span class="key sf"></span>Fat</p>`;
   $("#app").innerHTML = html;
-  $("#dBack").onclick = () => { detail = null; render(); window.scrollTo(0,0); };
+  $("#dBack").onclick = () => { detail = backStack.pop() || null; render(); window.scrollTo(0,0); };
   document.querySelectorAll("[data-detail]").forEach(el => {
-    const go = () => { detail = el.dataset.detail; render(); window.scrollTo(0,0); };
+    const go = () => { backStack.push(detail); detail = el.dataset.detail; render(); window.scrollTo(0,0); };
     el.onclick = go; el.onkeydown = ev => { if (ev.key === "Enter") go(); };
   });
   document.querySelectorAll("[data-add-meal]").forEach(b => b.onclick = () => openFood(b.dataset.addMeal));
@@ -555,7 +555,7 @@ function renderNutrient(){
   html += `</ul>${none > 0 ? `<p class="note">${none} other food${none === 1 ? "" : "s"} had no ${lower}${k === "p" || k === "c" || k === "f" ? "" : " listed"}.</p>` : ""}
   ${!["p","c","f"].includes(k) ? `<p class="note">Home-cooked food only counts ${lower} from ingredients you've entered, like salt or ghee in a home recipe.</p>` : ""}</section>`;
   $("#app").innerHTML = html;
-  $("#dBack").onclick = () => { detail = null; render(); window.scrollTo(0,0); };
+  $("#dBack").onclick = () => { detail = backStack.pop() || null; render(); window.scrollTo(0,0); };
   document.querySelectorAll("[data-detail]").forEach(b => b.onclick = () => { detail = b.dataset.detail; render(); });
   document.querySelectorAll("[data-edit-food]").forEach(el => {
     const open = () => { const e = d.food.find(x => x.id === el.dataset.editFood); if (e) { foodMeal = e.meal; showPortion(entryFood(e), e); } };
@@ -642,7 +642,7 @@ function renderToday(){
   });
   document.querySelectorAll("[data-add-meal]").forEach(b => b.onclick = () => openFood(b.dataset.addMeal));
   document.querySelectorAll("[data-detail]").forEach(b => {
-    const go = () => { detail = b.dataset.detail; render(); window.scrollTo(0,0); };
+    const go = () => { backStack = []; detail = b.dataset.detail; render(); window.scrollTo(0,0); };
     b.onclick = go; b.onkeydown = ev => { if (ev.key === "Enter") go(); };
   });
   document.querySelectorAll("[data-edit-food]").forEach(el => {
@@ -1261,7 +1261,7 @@ function renderHistory(){
   if (!any) html += `<p class="empty">Days you log will show up here.</p>`;
   else html += `<p class="note">Right-hand number is net calories (food minus exercise). Tap a day to open it.</p>`;
   $("#app").innerHTML = html;
-  document.querySelectorAll("[data-day]").forEach(li => li.onclick = () => { cur = li.dataset.day; tab = "today"; detail = null; render(); window.scrollTo(0,0); });
+  document.querySelectorAll("[data-day]").forEach(li => li.onclick = () => { cur = li.dataset.day; tab = "today"; detail = null; backStack = []; render(); window.scrollTo(0,0); });
   const keepScroll = fn => () => { const y = window.scrollY; fn(); render(); window.scrollTo(0, y); };
   document.querySelectorAll("[data-crange]").forEach(b => b.onclick = keepScroll(() => calRange = b.dataset.crange));
   document.querySelectorAll("[data-wrange]").forEach(b => b.onclick = keepScroll(() => wRange = b.dataset.wrange));
@@ -1321,7 +1321,7 @@ function renderSettings(){
       <button class="secondary danger" id="wipe">Delete all data</button>
     </div>
     <p class="note" style="margin-top:28px">Barcode data from Open Food Facts (openfoodfacts.org). Food search data from USDA FoodData Central (fdc.nal.usda.gov).</p>
-    <p class="note">MeraFood version 22</p>`;
+    <p class="note">MeraFood version 23</p>`;
   const mp = () => ({ p:parseFloat($("#mpP").value)||0, c:parseFloat($("#mpC").value)||0, f:parseFloat($("#mpF").value)||0 });
   const showMacros = () => {
     const m = mp(), total = m.p + m.c + m.f, g = parseFloat($("#sGoal").value) || 0;
@@ -1378,7 +1378,7 @@ function renderSettings(){
 }
 
 /* ---------- boot ---------- */
-document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; detail = null; if (tab === "today") cur = cur || todayKey(); render(); window.scrollTo(0,0); });
+document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; detail = null; backStack = []; if (tab === "today") cur = cur || todayKey(); render(); window.scrollTo(0,0); });
 render();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
