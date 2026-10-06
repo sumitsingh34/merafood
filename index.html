@@ -211,6 +211,16 @@ dialog.confirm{margin:auto;width:calc(100% - 48px);max-width:360px;border-radius
 .wdot.over{stroke:var(--tomato)}
 .unitrow{display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:.9rem;font-weight:600}
 .muted{color:var(--muted);font-weight:500}
+.macros.tint .tap,.macros.four .tap{cursor:pointer}
+.macros.four span{white-space:nowrap}
+.sn{background:var(--accent-deep)} .sover{background:var(--tomato)}
+.overtxt{color:var(--tomato)}
+.m-n-card .title{color:var(--ink)}
+.brow.tap{cursor:pointer}
+.tbar.big{height:10px;border-radius:5px;margin-top:10px}
+.tbar.big i{border-radius:5px}
+.m-p-card .title{color:var(--pro)} .m-c-card .title{color:var(--carb)} .m-f-card .title{color:var(--fat)}
+.it-kcal small{font-weight:600;margin-left:2px}
 h2.subpage{font-size:1.2rem;font-weight:800;margin:26px 0 0}
 .toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:6px;font-weight:700;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.show{opacity:1}
@@ -330,7 +340,7 @@ let cur = todayKey();
 
 function render(){
   document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === tab ? "page" : "false"));
-  if (tab === "today") (detail ? renderDetail() : renderToday());
+  if (tab === "today") (!detail ? renderToday() : detail.startsWith("nut-") ? renderNutrient() : renderDetail());
   else if (tab === "history") renderHistory();
   else renderSettings();
 }
@@ -359,7 +369,7 @@ function renderDetail(){
   const t = sumOf(items), s = split(t);
   const M = S.settings.macros, key = { Protein:"p", Carbs:"c", Fat:"f" };
   const row = (cls, name, g, kcal, pct, mult) => `
-    <div class="brow ${cls}">
+    <div class="brow ${cls} ${isDay ? "tap" : ""}" ${isDay ? `data-detail="nut-${key[name]}" role="button" tabindex="0"` : ""}>
       <div><b>${name}</b><span>${r1(g)} g × ${mult} kcal</span></div>
       <div class="bnum"><b>${r0(kcal)} kcal</b><span>${r0(pct)}%${isDay ? ` · goal ${M[key[name]]}%` : ""}</span></div>
     </div>`;
@@ -479,6 +489,80 @@ function openCalendar(y, m){
   $("#cToday").onclick = () => { cur = todayKey(); detail = null; closeSheet(); render(); window.scrollTo(0,0); };
 }
 
+/* ---------- where a nutrient came from ---------- */
+/* reference amounts: your own targets for the big three, general guides for the rest */
+function nutInfo(k){
+  const B = budget(cur), T = targets(cur);
+  return {
+    p:  { name:"Protein", cls:"m-p", bar:"sp", unit:"g",  kind:"target", ref:T.p, per:4 },
+    c:  { name:"Carbs",   cls:"m-c", bar:"sc", unit:"g",  kind:"target", ref:T.c, per:4 },
+    f:  { name:"Fat",     cls:"m-f", bar:"sf", unit:"g",  kind:"target", ref:T.f, per:9 },
+    fi: { name:"Fiber",   cls:"m-n", bar:"sn", unit:"g",  kind:"goal",  ref:B * 14 / 1000,
+          note:"General guide: about 14 g of fiber for every 1,000 kcal you eat." },
+    su: { name:"Sugar",   cls:"m-n", bar:"sn", unit:"g",  kind:"limit", ref:B * 0.10 / 4,
+          note:"General guide: keep added sugar under 10% of calories. This total also counts natural sugar from fruit and milk, so going a little over isn't a concern if most of it comes from those." },
+    sf: { name:"Sat fat", cls:"m-n", bar:"sn", unit:"g",  kind:"limit", ref:B * 0.10 / 9,
+          note:"General guide: keep saturated fat under 10% of calories." },
+    na: { name:"Sodium",  cls:"m-n", bar:"sn", unit:"mg", kind:"limit", ref:2000,
+          note:"General guide: keep sodium under 2,000 mg a day (about 1 teaspoon of salt in total)." }
+  }[k];
+}
+function renderNutrient(){
+  const k = detail.slice(4), I = nutInfo(k);
+  const fmt = v => I.unit === "mg" ? `${r0(v)} mg` : `${r1(v)} g`;
+  const d = day(cur), t = sumOf(d.food), total = t[k], ref = I.ref;
+  const real = ref ? total / ref * 100 : 0, over = I.kind === "limit" && real > 100;
+  const items = d.food.filter(e => (e[k] || 0) > (I.unit === "mg" ? 0.5 : 0.05)).sort((a,b) => (b[k]||0) - (a[k]||0));
+  const none = d.food.length - items.length, lower = I.name.toLowerCase();
+  const share = g => total ? g / total * 100 : 0;
+  const status = I.kind === "limit"
+    ? (over ? `${fmt(total - ref)} over the guide` : `${fmt(ref - total)} left under the guide`)
+    : (real < 100 ? `${fmt(ref - total)} to go` : real > 100 && I.kind === "target" ? `${fmt(total - ref)} over` : "goal reached");
+  const refWord = I.kind === "target" ? "your target" : I.kind === "goal" ? "aim for at least" : "keep under";
+  const chip = (x, label) => `<button data-detail="nut-${x}" aria-pressed="${x === k}">${label}</button>`;
+  let html = `
+  <div class="datebar">
+    <button class="iconbtn" id="dBack" aria-label="Back to today">‹</button>
+    <h1>${I.name}, ${esc(niceDate(cur).replace(/^(Today|Yesterday), /, ""))}</h1>
+    <span style="width:44px"></span>
+  </div>
+  <div class="ranges" role="group" aria-label="Nutrient">${chip("p","Protein")}${chip("c","Carbs")}${chip("f","Fat")}</div>
+  <div class="ranges" role="group" aria-label="More nutrients" style="margin-top:4px">${chip("fi","Fiber")}${chip("su","Sugar")}${chip("sf","Sat fat")}${chip("na","Sodium")}</div>
+  <div class="label ${I.cls}-card" style="margin-top:12px">
+    <p class="title">${fmt(total)}</p>
+    <p class="note" style="margin:0">${refWord} ${fmt(ref)}${I.per ? ` · ${r0(total * I.per)} kcal from ${lower}` : ""}</p>
+    <div class="tbar big"><i class="${over ? "sover" : I.bar}" style="width:${Math.min(100, real)}%"></i></div>
+    <p class="note" style="margin:4px 0 0"><b class="${over ? "overtxt" : ""}">${r0(real)}%</b> of ${I.kind === "limit" ? "the limit" : I.kind === "goal" ? "the guide" : "target"} · ${status}</p>
+    ${I.note ? `<p class="note">${I.note}</p>` : ""}
+  </div>
+  <section class="meal"><div class="mhead"><h2>By meal</h2></div><ul class="items">`;
+  MEALS.forEach(m => {
+    const g = d.food.filter(e => e.meal === m).reduce((a,e) => a + (e[k] || 0), 0);
+    html += `<li><div class="it-main"><div class="it-name">${m}</div>
+      <div class="split"><i class="${I.bar}" style="width:${share(g)}%"></i></div></div>
+      <span class="it-kcal">${fmt(g)} <small class="muted">${r0(share(g))}%</small></span></li>`;
+  });
+  html += `</ul></section>
+  <section class="meal"><div class="mhead"><h2>Foods</h2><span>${items.length}</span></div><ul class="items">`;
+  if (!items.length) html += `<li class="empty">No ${lower} logged for this day yet.</li>`;
+  items.forEach(e => {
+    html += `<li><div class="it-main tap" data-edit-food="${e.id}" role="button" tabindex="0">
+      <div class="it-name">${esc(e.name)}</div>
+      <div class="it-sub">${esc(e.meal)} · ${esc(e.amount)} · ${r0(share(e[k]))}% of the day's ${lower}</div>
+      <div class="split"><i class="${I.bar}" style="width:${share(e[k])}%"></i></div></div>
+      <span class="it-kcal">${fmt(e[k])}</span></li>`;
+  });
+  html += `</ul>${none > 0 ? `<p class="note">${none} other food${none === 1 ? "" : "s"} had no ${lower}${k === "p" || k === "c" || k === "f" ? "" : " listed"}.</p>` : ""}
+  ${!["p","c","f"].includes(k) ? `<p class="note">Home-cooked food only counts ${lower} from ingredients you've entered, like salt or ghee in a home recipe.</p>` : ""}</section>`;
+  $("#app").innerHTML = html;
+  $("#dBack").onclick = () => { detail = null; render(); window.scrollTo(0,0); };
+  document.querySelectorAll("[data-detail]").forEach(b => b.onclick = () => { detail = b.dataset.detail; render(); });
+  document.querySelectorAll("[data-edit-food]").forEach(el => {
+    const open = () => { const e = d.food.find(x => x.id === el.dataset.editFood); if (e) { foodMeal = e.meal; showPortion(entryFood(e), e); } };
+    el.onclick = open; el.onkeydown = ev => { if (ev.key === "Enter") open(); };
+  });
+}
+
 /* ---------- today ---------- */
 function renderToday(){
   const d = day(cur), t = totals(cur), goal = S.settings.goal;
@@ -507,17 +591,15 @@ function renderToday(){
     <div class="macros tint">
       ${[["m-p","Protein","p"],["m-c","Carbs","c"],["m-f","Fat","f"]].map(([cls,name,k]) => {
         const tg = tgt[k], real = tg ? t[k]/tg*100 : 0, pct = Math.min(100, real);
-        return `<div class="${cls}"><b>${r0(t[k])}<small> / ${r0(tg)} g</small></b>
+        return `<div class="${cls} tap" data-detail="nut-${k}" role="button" tabindex="0" aria-label="See where your ${name.toLowerCase()} came from"><b>${r0(t[k])}<small> / ${r0(tg)} g</small></b>
           <span class="tlabel"><span>${name}</span><em class="${real > 100 ? "tover" : ""}">${r0(real)}%</em></span>
           <i class="tbar" aria-label="${r0(t[k])} of ${r0(tg)} grams, ${r0(real)} percent"><i style="width:${pct}%"></i></i></div>`;
       }).join("")}
     </div>
     ${addEx && t.burned > 0 ? `<p class="note" style="margin:6px 0 0">Targets based on ${r0(B)} kcal: your ${r0(goal)} goal + ${r0(t.burned)} from exercise.</p>` : ""}
     <div class="macros four">
-      <div><b>${r0(t.fi)} g</b><span>Fiber</span></div>
-      <div><b>${r0(t.su)} g</b><span>Sugar</span></div>
-      <div><b>${r0(t.sf)} g</b><span>Sat fat</span></div>
-      <div><b>${r0(t.na)} mg</b><span>Sodium</span></div>
+      ${[["fi","Fiber","g"],["su","Sugar","g"],["sf","Sat fat","g"],["na","Sodium","mg"]].map(([k,n,u]) =>
+        `<div class="tap" data-detail="nut-${k}" role="button" tabindex="0" aria-label="See where your ${n.toLowerCase()} came from"><b>${r0(t[k])} ${u}</b><span>${n} ›</span></div>`).join("")}
     </div>
     <button class="morelink" data-detail="day">See where ${cur === todayKey() ? "today's" : "this day's"} calories come from ›</button>
   </div>`;
@@ -559,7 +641,10 @@ function renderToday(){
     save(); render(); toast(`Copied to ${m.toLowerCase()}`);
   });
   document.querySelectorAll("[data-add-meal]").forEach(b => b.onclick = () => openFood(b.dataset.addMeal));
-  document.querySelectorAll("[data-detail]").forEach(b => b.onclick = () => { detail = b.dataset.detail; render(); window.scrollTo(0,0); });
+  document.querySelectorAll("[data-detail]").forEach(b => {
+    const go = () => { detail = b.dataset.detail; render(); window.scrollTo(0,0); };
+    b.onclick = go; b.onkeydown = ev => { if (ev.key === "Enter") go(); };
+  });
   document.querySelectorAll("[data-edit-food]").forEach(el => {
     const open = () => { const e = d.food.find(x => x.id === el.dataset.editFood); if (e) { foodMeal = e.meal; showPortion(entryFood(e), e); } };
     el.onclick = open; el.onkeydown = ev => { if (ev.key === "Enter") open(); };
@@ -1236,7 +1321,7 @@ function renderSettings(){
       <button class="secondary danger" id="wipe">Delete all data</button>
     </div>
     <p class="note" style="margin-top:28px">Barcode data from Open Food Facts (openfoodfacts.org). Food search data from USDA FoodData Central (fdc.nal.usda.gov).</p>
-    <p class="note">MeraFood version 20</p>`;
+    <p class="note">MeraFood version 22</p>`;
   const mp = () => ({ p:parseFloat($("#mpP").value)||0, c:parseFloat($("#mpC").value)||0, f:parseFloat($("#mpF").value)||0 });
   const showMacros = () => {
     const m = mp(), total = m.p + m.c + m.f, g = parseFloat($("#sGoal").value) || 0;
